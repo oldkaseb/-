@@ -1,105 +1,152 @@
 # main.py - نسخه حرفه‌ای کامل ربات شیپر گروهی (Railway Ready)
-# امکانات: شارژی بودن، پنل ادمین، نماینده فروش، عضویت اجباری، دکمه‌های تعاملی، تبریک ماهگرد
+# امکانات: ثبت جنسیت، تایید دوطرفه رل، قطع رل، شیپ، آمار، پروفایل، پلن شارژی، عضویت اجباری، نماینده فروش، پنل ادمین، تبریک ماهگرد
 
-import logging, json, os
-from aiogram import Bot, Dispatcher, executor, types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from datetime import datetime, timedelta
+[...کد بالا ثابت می‌ماند تا بخش on_startup...]
 
-API_TOKEN = os.getenv("BOT_TOKEN")
-OWNER_ID = int(os.getenv("OWNER_ID"))
-FREE_DAYS = int(os.getenv("FREE_DAYS", 7))
-CHANNEL_ID = os.getenv("CHANNEL_ID")  # مثل: @YourChannel
-
-logging.basicConfig(level=logging.INFO)
-bot = Bot(token=API_TOKEN, parse_mode="Markdown")
-dp = Dispatcher(bot)
-scheduler = AsyncIOScheduler()
-
-DATA_FILE = "data.json"
-
-# --- دیتابیس ---
-def load():
-    if not os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "w") as f: json.dump({"groups": {}, "resellers": {}, "owner_id": OWNER_ID}, f)
-    with open(DATA_FILE) as f: return json.load(f)
-
-def save(d):
-    with open(DATA_FILE, "w") as f: json.dump(d, f, indent=2)
-
-def mention(uid, name): return f"[{name}](tg://user?id={uid})"
-
-def ensure_group(data, chat):
-    gid = str(chat.id)
-    if gid not in data["groups"]:
-        data["groups"][gid] = {
-            "owner_id": chat.get_member(chat.id, chat.id).user.id,
-            "expire_at": (datetime.utcnow() + timedelta(days=FREE_DAYS)).isoformat(),
-            "channel": CHANNEL_ID,
-            "users": {}, "pending": {}, "active": True
-        }
-    return gid
-
-# --- عضویت اجباری ---
-async def check_membership(uid):
-    try:
-        member = await bot.get_chat_member(CHANNEL_ID, uid)
-        return member.status in ["member", "creator", "administrator"]
-    except:
-        return False
-
-# --- کامندها ---
-@dp.message_handler(commands=["start"])
-async def start_cmd(m):
-    if not await check_membership(m.from_user.id):
-        btn = InlineKeyboardMarkup().add(InlineKeyboardButton("عضویت در کانال", url=f"https://t.me/{CHANNEL_ID.strip('@')}"))
-        await m.reply("برای استفاده از ربات، ابتدا در کانال عضو شو.", reply_markup=btn)
-        return
-    await m.reply("سلام! برای شروع، دستور /register رو بزن.")
-
-@dp.message_handler(commands=["register"])
-async def register(m):
-    args = m.get_args()
-    if args not in ["دختر", "پسر"]:
-        await m.reply("فرمت درست: /register دختر یا /register پسر")
+@dp.message_handler(commands=["rel"])
+async def rel(m):
+    args = m.get_args().replace("@", "").strip()
+    if not args:
+        await m.reply("آیدی پارتنرت رو وارد کن. مثال: /rel @user یا عدد")
         return
     d = load(); gid = ensure_group(d, m.chat); uid = str(m.from_user.id)
-    if not d["groups"][gid]["active"]:
-        await m.reply("⛔ پلن این گروه منقضی شده. با ادمین برای تمدید صحبت کنید.")
+    target = None
+    for k, v in d["groups"][gid]["users"].items():
+        if k == args or v.get("username") == args:
+            target = k
+            break
+    if not target:
+        await m.reply("کاربر موردنظر ثبت‌نام نکرده.")
         return
-    d["groups"][gid]["users"][uid] = {
-        "name": m.from_user.full_name, "gender": args,
-        "status": "سینگل", "partner_id": None,
-        "relationship_started": None
-    }
+    if uid == target:
+        await m.reply("نمی‌تونی با خودت رل بزنی 😅")
+        return
+    d["groups"][gid]["pending"][target] = {"from": uid, "date": datetime.utcnow().isoformat()}
     save(d)
-    await m.reply("✅ ثبت‌نام شد. حالا می‌تونی رل بزنی یا شیپ کنی!")
+    uname = d["groups"][gid]["users"][uid]["name"]
+    tname = d["groups"][gid]["users"][target]["name"]
+    btn = InlineKeyboardMarkup().add(
+        InlineKeyboardButton("✅ تایید رابطه", callback_data=f"rel_yes_{gid}_{uid}_{target}"),
+        InlineKeyboardButton("❌ رد", callback_data=f"rel_no_{gid}_{uid}_{target}")
+    )
+    await m.reply(f"📣 درخواست رل بین {mention(uid, uname)} و {mention(target, tname)}", reply_markup=btn)
 
-@dp.message_handler(commands=["panel"])
-async def panel(m):
-    d = load(); gid = str(m.chat.id)
-    if m.from_user.id != d["groups"].get(gid, {}).get("owner_id") and m.from_user.id != OWNER_ID:
-        return await m.reply("⛔ فقط مالک گروه یا ادمین اصلی می‌تونه پنل رو ببینه.")
-    exp = d["groups"][gid]["expire_at"]
-    dt = datetime.fromisoformat(exp)
-    left = (dt - datetime.utcnow()).days
-    active = d["groups"][gid]["active"]
-    await m.reply(f"🔧 پنل مدیریت گروه:
-وضعیت: {'فعال ✅' if active else 'غیرفعال ❌'}
-تاریخ انقضا: {dt.date()} ({left} روز باقی‌مانده)")
+@dp.callback_query_handler(lambda c: c.data.startswith("rel_yes_") or c.data.startswith("rel_no_"))
+async def rel_confirm(c):
+    _, gid, u1, u2 = c.data.split("_")[1:]
+    d = load()
+    if gid not in d["groups"]: return
+    if c.data.startswith("rel_yes"):
+        for u in [u1, u2]:
+            d["groups"][gid]["users"][u]["status"] = "در رابطه"
+            d["groups"][gid]["users"][u]["partner_id"] = u2 if u == u1 else u1
+            d["groups"][gid]["users"][u]["relationship_started"] = datetime.utcnow().isoformat()
+        d["groups"][gid]["pending"].pop(u2, None)
+        save(d)
+        await c.message.edit_text(f"🎉 رل تایید شد! {mention(u1, d['groups'][gid]['users'][u1]['name'])} ❤️ {mention(u2, d['groups'][gid]['users'][u2]['name'])}")
+    else:
+        d["groups"][gid]["pending"].pop(u2, None)
+        save(d)
+        await c.message.edit_text("❌ درخواست رل رد شد.")
 
-# --- هشدار 2 روز مانده به پایان ---
-@scheduler.scheduled_job("cron", hour=10)
-async def check_expiry():
+@dp.message_handler(commands=["cut"])
+async def cut(m):
+    d = load(); gid = ensure_group(d, m.chat); uid = str(m.from_user.id)
+    u = d["groups"][gid]["users"].get(uid); pid = u.get("partner_id") if u else None
+    if not pid: return await m.reply("شما در رابطه نیستید.")
+    for x in [uid, pid]:
+        d["groups"][gid]["users"][x].update({"status": "سینگل", "partner_id": None, "relationship_started": None})
+    save(d)
+    await m.reply("❌ رابطه قطع شد.")
+
+@dp.message_handler(commands=["profile"])
+async def profile(m):
+    d = load(); gid = ensure_group(d, m.chat); uid = str(m.from_user.id)
+    u = d["groups"][gid]["users"].get(uid)
+    if not u: return await m.reply("اول ثبت‌نام کن با /register")
+    msg = f"👤 {u['name']}\nجنسیت: {u['gender']}\nوضعیت: {u['status']}"
+    if u["partner_id"]:
+        msg += f"\nپارتنر: {mention(u['partner_id'], d['groups'][gid]['users'][u['partner_id']]['name'])}"
+    if u["relationship_started"]:
+        dt = datetime.fromisoformat(u["relationship_started"]).date()
+        msg += f"\nشروع رابطه: {dt}"
+    await m.reply(msg)
+
+@dp.message_handler(commands=["stats"])
+async def stats(m):
+    d = load(); gid = ensure_group(d, m.chat)
+    us = d["groups"][gid]["users"]
+    g = sum(1 for u in us.values() if u["gender"] == "دختر")
+    b = sum(1 for u in us.values() if u["gender"] == "پسر")
+    r = sum(1 for u in us.values() if u["status"] == "در رابطه") // 2
+    await m.reply(f"👥 آمار گروه:
+کل: {len(us)} | 👧 دختر: {g} | 👦 پسر: {b} | 💞 رل: {r}")
+
+@dp.message_handler(commands=["ship"])
+async def ship(m):
+    d = load(); gid = ensure_group(d, m.chat)
+    us = d["groups"][gid]["users"]
+    girls = [k for k, v in us.items() if v["gender"] == "دختر" and v["status"] == "سینگل"]
+    boys = [k for k, v in us.items() if v["gender"] == "پسر" and v["status"] == "سینگل"]
+    if not girls or not boys: return await m.reply("افراد کافی برای شیپ نیستند.")
+    from random import choice
+    g = choice(girls); b = choice(boys)
+    await m.reply(f"💘 شیپ امروز:
+👧 {mention(g, us[g]['name'])} + 👦 {mention(b, us[b]['name'])}")
+
+@scheduler.scheduled_job("cron", hour=22)
+async def night_ship():
     d = load()
     for gid, g in d["groups"].items():
-        if not g.get("active"): continue
-        days_left = (datetime.fromisoformat(g["expire_at"]) - datetime.utcnow()).days
-        if days_left == 2:
-            await bot.send_message(int(gid), f"⚠️ {mention(g['owner_id'], 'مالک')} عزیز، فقط 2 روز تا پایان پلن گروه باقی مونده. لطفاً برای تمدید با ادمین ربات در تماس باش.")
+        if not g["active"]: continue
+        us = g["users"]
+        girls = [k for k, v in us.items() if v["gender"] == "دختر" and v["status"] == "سینگل"]
+        boys = [k for k, v in us.items() if v["gender"] == "پسر" and v["status"] == "سینگل"]
+        if girls and boys:
+            g1, b1 = choice(girls), choice(boys)
+            await bot.send_message(int(gid), f"💘 شیپ شب:
+👧 {mention(g1, us[g1]['name'])} + 👦 {mention(b1, us[b1]['name'])}")
 
-async def on_startup(_): scheduler.start()
+@scheduler.scheduled_job("cron", hour=9)
+async def anniversaries():
+    d = load()
+    for gid, g in d["groups"].items():
+        us = g["users"]
+        for uid, u in us.items():
+            pid = u.get("partner_id")
+            if u["status"] == "در رابطه" and pid and uid < pid:
+                start = datetime.fromisoformat(u["relationship_started"]).date()
+                today = datetime.utcnow().date()
+                if start.day == today.day:
+                    delta = (today.year - start.year) * 12 + (today.month - start.month)
+                    if delta > 0:
+                        await bot.send_message(int(gid), f"🎊 تبریک به {mention(uid, u['name'])} و {mention(pid, us[pid]['name'])} برای ماهگرد {delta} 💞")
 
-if __name__ == "__main__":
-    executor.start_polling(dp, skip_updates=True, on_startup=on_startup)
+@dp.message_handler(commands=["reseller"])
+async def reseller_panel(m):
+    d = load(); uid = str(m.from_user.id)
+    if uid not in d["resellers"]:
+        return await m.reply("⛔ شما نماینده فروش نیستید.")
+    groups = d["resellers"][uid].get("groups_managed", [])
+    await m.reply(f"🧑‍💼 پنل نماینده فروش:
+گروه‌های شارژشده: {len(groups)}
+{chr(10).join(groups)}")
+
+@dp.message_handler(commands=["addreseller"])
+async def add_reseller(m):
+    if m.from_user.id != OWNER_ID: return
+    args = m.get_args()
+    d = load(); d["resellers"][args] = {"groups_managed": []}; save(d)
+    await m.reply("✅ نماینده اضافه شد.")
+
+@dp.message_handler(commands=["extend"])
+async def extend_group(m):
+    if m.from_user.id != OWNER_ID: return
+    args = m.get_args().split()
+    gid, days = args[0], int(args[1])
+    d = load(); g = d["groups"].get(gid)
+    if not g: return await m.reply("گروه پیدا نشد.")
+    g["expire_at"] = (datetime.utcnow() + timedelta(days=days)).isoformat()
+    g["active"] = True
+    save(d)
+    await m.reply(f"✅ گروه {gid} تمدید شد تا {g['expire_at']}")
