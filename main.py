@@ -6,6 +6,7 @@ import random
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types, executor
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
     raise ValueError("توکن BOT_TOKEN تنظیم نشده. لطفاً آن را در Railway وارد کن.")
@@ -15,8 +16,11 @@ dp = Dispatcher(bot)
 
 DATA_FOLDER = "data"
 os.makedirs(DATA_FOLDER, exist_ok=True)
+
+
 def get_group_file(chat_id):
     return os.path.join(DATA_FOLDER, f"group_{chat_id}.json")
+
 
 def load_group_data(chat_id):
     path = get_group_file(chat_id)
@@ -35,12 +39,15 @@ def load_group_data(chat_id):
             "forced_channel": None,
             "sales": [],
             "owners": [],
-        }
+        },
     }
+
 
 def save_group_data(chat_id, data):
     with open(get_group_file(chat_id), "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
+
+
 @dp.message_handler(commands=["start"])
 async def start(msg: types.Message):
     if msg.chat.type != "private":
@@ -50,7 +57,10 @@ async def start(msg: types.Message):
     kb.add(
         InlineKeyboardButton("📋 راهنما", callback_data="help"),
         InlineKeyboardButton("📞 تماس با مالک", url="https://t.me/oldkaseb"),
-        InlineKeyboardButton("➕ افزودن ربات", url=f"https://t.me/{(await bot.get_me()).username}?startgroup=true")
+        InlineKeyboardButton(
+            "➕ افزودن ربات",
+            url=f"https://t.me/{(await bot.get_me()).username}?startgroup=true",
+        ),
     )
 
     await msg.answer(
@@ -62,12 +72,18 @@ async def start(msg: types.Message):
 💸 شارژ ماهیانه: ۵۰ هزار تومان
 
 🔘 دکمه‌های زیر رو ببین:""",
-        reply_markup=kb
+        reply_markup=kb,
     )
+
+
 @dp.message_handler(lambda m: m.chat.type != "private" and "شیپر" in m.text.lower())
 async def keyword_handler(msg: types.Message):
     await msg.reply("جانم؟ کیو بگیرم برات؟ آیدی بده 😎")
-@dp.message_handler(lambda m: m.chat.type != "private" and ("من پسرم" in m.text or "من دخترم" in m.text))
+
+
+@dp.message_handler(
+    lambda m: m.chat.type != "private" and ("من پسرم" in m.text or "من دخترم" in m.text)
+)
 async def gender_register(msg: types.Message):
     data = load_group_data(msg.chat.id)
     gender = "پسر" if "پسر" in msg.text else "دختر"
@@ -77,24 +93,43 @@ async def gender_register(msg: types.Message):
     data["users"][uid]["gender"] = gender
     save_group_data(msg.chat.id, data)
     await msg.reply(f"جنسیت شما به عنوان {gender} ثبت شد ✅")
-@dp.message_handler(lambda m: m.chat.type != "private" and m.text.lower().startswith("تعریف مشخصات"))
+
+
+@dp.message_handler(
+    lambda m: m.chat.type != "private" and m.text.lower().startswith("تعریف مشخصات")
+)
 async def define_user_info(msg: types.Message):
     parts = msg.text.split()
     if len(parts) != 6:
-        await msg.reply("فرمت صحیح: تعریف مشخصات اسم سن قد شهر\nمثال: تعریف مشخصات علی 21 180 تهران")
+        await msg.reply(
+            "فرمت صحیح: تعریف مشخصات اسم سن قد شهر\nمثال: تعریف مشخصات علی 21 180 تهران"
+        )
         return
     _, _, name, age, height, city = parts
-    if not name.isalpha() or not age.isdigit() or not height.isdigit() or not city.isalpha():
-        await msg.reply("ورودی‌ها نامعتبر هستند. فقط از حروف برای اسم/شهر و از عدد برای سن/قد استفاده کنید.")
+    if (
+        not name.isalpha()
+        or not age.isdigit()
+        or not height.isdigit()
+        or not city.isalpha()
+    ):
+        await msg.reply(
+            "ورودی‌ها نامعتبر هستند. فقط از حروف برای اسم/شهر و از عدد برای سن/قد استفاده کنید."
+        )
         return
     data = load_group_data(msg.chat.id)
     uid = str(msg.from_user.id)
     if uid not in data["users"]:
         data["users"][uid] = {}
-    data["users"][uid].update({"name": name, "age": int(age), "height": int(height), "city": city})
+    data["users"][uid].update(
+        {"name": name, "age": int(age), "height": int(height), "city": city}
+    )
     save_group_data(msg.chat.id, data)
     await msg.reply("اطلاعات با موفقیت ثبت شد ✅")
-@dp.message_handler(lambda m: m.chat.type != "private" and m.text.lower().startswith("ثبت تولد"))
+
+
+@dp.message_handler(
+    lambda m: m.chat.type != "private" and m.text.lower().startswith("ثبت تولد")
+)
 async def birth_register(msg: types.Message):
     parts = msg.text.split()
     if len(parts) != 3:
@@ -109,7 +144,11 @@ async def birth_register(msg: types.Message):
     data["users"].setdefault(uid, {})["birthday"] = date_str
     save_group_data(msg.chat.id, data)
     await msg.reply("تاریخ تولد ثبت شد ✅")
-@dp.message_handler(lambda m: m.chat.type != "private" and m.text.lower().startswith("شیپر من کیم"))
+
+
+@dp.message_handler(
+    lambda m: m.chat.type != "private" and m.text.lower().startswith("شیپر من کیم")
+)
 async def whoami(msg: types.Message):
     data = load_group_data(msg.chat.id)
     uid = str(msg.from_user.id)
@@ -131,7 +170,11 @@ async def whoami(msg: types.Message):
     info += f"💘 کراش‌ها: {len(crushes)} نفر"
 
     await msg.reply(info)
-@dp.message_handler(lambda m: m.chat.type != "private" and m.text.lower().startswith("ثبت کراش"))
+
+
+@dp.message_handler(
+    lambda m: m.chat.type != "private" and m.text.lower().startswith("ثبت کراش")
+)
 async def add_crush(msg: types.Message):
     data = load_group_data(msg.chat.id)
     uid = str(msg.from_user.id)
@@ -158,7 +201,10 @@ async def add_crush(msg: types.Message):
     else:
         await msg.reply("این شخص از قبل تو لیست کراش‌هات بود!")
 
-@dp.message_handler(lambda m: m.chat.type != "private" and m.text.lower().startswith("حذف کراش"))
+
+@dp.message_handler(
+    lambda m: m.chat.type != "private" and m.text.lower().startswith("حذف کراش")
+)
 async def remove_crush(msg: types.Message):
     data = load_group_data(msg.chat.id)
     uid = str(msg.from_user.id)
@@ -181,7 +227,11 @@ async def remove_crush(msg: types.Message):
         await msg.reply("کراش حذف شد ✅")
     else:
         await msg.reply("این کاربر در لیست کراش‌های شما نیست.")
-@dp.message_handler(lambda m: m.chat.type != "private" and m.text.lower().startswith("لیست کراش"))
+
+
+@dp.message_handler(
+    lambda m: m.chat.type != "private" and m.text.lower().startswith("لیست کراش")
+)
 async def list_crushes(msg: types.Message):
     data = load_group_data(msg.chat.id)
     uid = str(msg.from_user.id)
@@ -198,7 +248,11 @@ async def list_crushes(msg: types.Message):
         except:
             text += f"• {cid}\n"
     await msg.reply(text)
-@dp.message_handler(lambda m: m.chat.type != "private" and m.text.lower().startswith("شیپم کن"))
+
+
+@dp.message_handler(
+    lambda m: m.chat.type != "private" and m.text.lower().startswith("شیپم کن")
+)
 async def do_ship(msg: types.Message):
     data = load_group_data(msg.chat.id)
     uid = str(msg.from_user.id)
@@ -223,11 +277,19 @@ async def do_ship(msg: types.Message):
     partner_id = random.choice(candidates)
     try:
         user2 = await bot.get_chat(partner_id)
-        await msg.reply(f"❤️ شیپ شدید با {user2.full_name} (@{user2.username or 'ندارد'})\n({method})")
+        await msg.reply(
+            f"❤️ شیپ شدید با {user2.full_name} (@{user2.username or 'ندارد'})\n({method})"
+        )
     except:
         await msg.reply("خطا در دسترسی به کاربر مقابل.")
+
+
 # افزودن کراش با ریپلای یا شناسه
-@dp.message_handler(lambda m: m.chat.type != "private" and m.reply_to_message and "ثبت کراش" in m.text.lower())
+@dp.message_handler(
+    lambda m: m.chat.type != "private"
+    and m.reply_to_message
+    and "ثبت کراش" in m.text.lower()
+)
 async def register_crush_reply(msg: types.Message):
     data = load_group_data(msg.chat.id)
     uid = str(msg.from_user.id)
@@ -243,8 +305,12 @@ async def register_crush_reply(msg: types.Message):
     else:
         await msg.reply("قبلاً این شخص رو کراش کردی!")
 
+
 # حذف کراش با ریپلای یا آیدی
-@dp.message_handler(lambda m: m.chat.type != "private" and ("حذف کراش" in m.text.lower() or "شیپر کات" in m.text.lower()))
+@dp.message_handler(
+    lambda m: m.chat.type != "private"
+    and ("حذف کراش" in m.text.lower() or "شیپر کات" in m.text.lower())
+)
 async def remove_crush(msg: types.Message):
     data = load_group_data(msg.chat.id)
     uid = str(msg.from_user.id)
@@ -265,7 +331,9 @@ async def remove_crush(msg: types.Message):
                 return
 
     if not crush_id:
-        await msg.reply("فرمت صحیح: حذف کراش [ریپلای] یا شیپر کات [ریپلای/یوزرنیم/آیدی]")
+        await msg.reply(
+            "فرمت صحیح: حذف کراش [ریپلای] یا شیپر کات [ریپلای/یوزرنیم/آیدی]"
+        )
         return
 
     if crush_id in data.get("crushes", {}).get(uid, []):
@@ -275,8 +343,11 @@ async def remove_crush(msg: types.Message):
     else:
         await msg.reply("این فرد جزو کراش‌های شما نیست.")
 
+
 # نمایش لیست کراش‌ها
-@dp.message_handler(lambda m: m.chat.type != "private" and m.text.lower() == "لیست کراش ها")
+@dp.message_handler(
+    lambda m: m.chat.type != "private" and m.text.lower() == "لیست کراش ها"
+)
 async def list_crushes(msg: types.Message):
     data = load_group_data(msg.chat.id)
     uid = str(msg.from_user.id)
@@ -292,8 +363,12 @@ async def list_crushes(msg: types.Message):
         except:
             crush_list.append(f"- کاربر حذف‌شده ({cid})")
     await msg.reply("💘 لیست کراش‌های شما:\n" + "\n".join(crush_list))
+
+
 # دستور "شیپم کن" → شیپ با یکی از کراش‌ها یا فرد تصادفی از جنس مخالف
-@dp.message_handler(lambda m: m.chat.type != "private" and m.text.lower().startswith("شیپم کن"))
+@dp.message_handler(
+    lambda m: m.chat.type != "private" and m.text.lower().startswith("شیپم کن")
+)
 async def ship_user(msg: types.Message):
     data = load_group_data(msg.chat.id)
     uid = str(msg.from_user.id)
@@ -311,7 +386,11 @@ async def ship_user(msg: types.Message):
     else:
         # پیدا کردن فرد تصادفی از جنس مخالف
         opposite = "دختر" if gender == "پسر" else "پسر"
-        pool = [uid2 for uid2, info in data["users"].items() if info.get("gender") == opposite and uid2 != uid]
+        pool = [
+            uid2
+            for uid2, info in data["users"].items()
+            if info.get("gender") == opposite and uid2 != uid
+        ]
         if pool:
             target_id = random.choice(pool)
 
@@ -326,10 +405,15 @@ async def ship_user(msg: types.Message):
 
     user1 = await bot.get_chat(int(uid))
     user2 = await bot.get_chat(int(target_id))
-    await msg.reply(f"💞 {user1.full_name} و {user2.full_name} با هم شیپ شدن!\nمبارکه! 🎉")
+    await msg.reply(
+        f"💞 {user1.full_name} و {user2.full_name} با هم شیپ شدن!\nمبارکه! 🎉"
+    )
+
 
 # دستور ثبت سینگل – "من سینگلم شیپر"
-@dp.message_handler(lambda m: m.chat.type != "private" and "من سینگلم شیپر" in m.text.lower())
+@dp.message_handler(
+    lambda m: m.chat.type != "private" and "من سینگلم شیپر" in m.text.lower()
+)
 async def set_single(msg: types.Message):
     data = load_group_data(msg.chat.id)
     uid = str(msg.from_user.id)
@@ -338,8 +422,11 @@ async def set_single(msg: types.Message):
     save_group_data(msg.chat.id, data)
     await msg.reply("وضعیت شما به عنوان سینگل ثبت شد ✅")
 
+
 # دستور ثبت رل – "من رلم شیپر"
-@dp.message_handler(lambda m: m.chat.type != "private" and "من رلم شیپر" in m.text.lower())
+@dp.message_handler(
+    lambda m: m.chat.type != "private" and "من رلم شیپر" in m.text.lower()
+)
 async def set_relationship(msg: types.Message):
     parts = msg.text.split()
     if len(parts) < 5:
@@ -368,8 +455,11 @@ async def set_relationship(msg: types.Message):
     save_group_data(msg.chat.id, data)
     await msg.reply("رابطه با موفقیت ثبت شد 💖")
 
+
 # دستور ثبت پارتنر – "ثبت پارتنر @username"
-@dp.message_handler(lambda m: m.chat.type != "private" and m.text.lower().startswith("ثبت پارتنر"))
+@dp.message_handler(
+    lambda m: m.chat.type != "private" and m.text.lower().startswith("ثبت پارتنر")
+)
 async def register_partner(msg: types.Message):
     parts = msg.text.split()
     if len(parts) != 3:
@@ -388,8 +478,11 @@ async def register_partner(msg: types.Message):
     save_group_data(msg.chat.id, data)
     await msg.reply("پارتنر ثبت شد ✅")
 
+
 # دستور ثبت اکس – "ثبت اکس @username"
-@dp.message_handler(lambda m: m.chat.type != "private" and m.text.lower().startswith("ثبت اکس"))
+@dp.message_handler(
+    lambda m: m.chat.type != "private" and m.text.lower().startswith("ثبت اکس")
+)
 async def register_ex(msg: types.Message):
     parts = msg.text.split()
     if len(parts) != 3:
@@ -408,6 +501,7 @@ async def register_ex(msg: types.Message):
     save_group_data(msg.chat.id, data)
     await msg.reply("اکس ثبت شد ❌💔")
 
+
 # ارسال تبریک ماهگرد شیپ‌ها
 async def check_month_anniversaries():
     for file in os.listdir(DATA_FOLDER):
@@ -418,19 +512,26 @@ async def check_month_anniversaries():
                 try:
                     start_date = datetime.strptime(c["date"], "%Y-%m-%d")
                     now = datetime.now()
-                    months = (now.year - start_date.year) * 12 + now.month - start_date.month
+                    months = (
+                        (now.year - start_date.year) * 12 + now.month - start_date.month
+                    )
                     if start_date.day == now.day and months > 0:
                         a = await bot.get_chat(int(c["a"]))
                         b = await bot.get_chat(int(c["b"]))
-                        await bot.send_message(chat_id, f"🎉 ماهگرد {months} ام {a.full_name} و {b.full_name} مبارک!")
+                        await bot.send_message(
+                            chat_id,
+                            f"🎉 ماهگرد {months} ام {a.full_name} و {b.full_name} مبارک!",
+                        )
                 except:
                     continue
+
 
 # اجرای خودکار ماهگردها هر روز (در فریم‌ورک‌های کامل میشه زمان‌بندی کرد)
 # چک نصب بودن ربات در گروه
 def check_installed(chat_id):
     data = load_group_data(chat_id)
     return data.get("installed", False)
+
 
 # دستور "شیپر نصب" – فعال‌سازی شیپر برای گروه
 @dp.message_handler(lambda m: m.chat.type != "private" and "شیپر نصب" in m.text.lower())
@@ -445,8 +546,11 @@ async def install_shiper(msg: types.Message):
     save_group_data(msg.chat.id, data)
     await msg.reply("ربات با موفقیت برای این گروه فعال شد ✅\n۷ روز تست رایگان آغاز شد.")
 
+
 # دستور "شیپر لغو نصب" – حذف نصب شیپر
-@dp.message_handler(lambda m: m.chat.type != "private" and "شیپر لغو نصب" in m.text.lower())
+@dp.message_handler(
+    lambda m: m.chat.type != "private" and "شیپر لغو نصب" in m.text.lower()
+)
 async def uninstall_shiper(msg: types.Message):
     data = load_group_data(msg.chat.id)
     if msg.from_user.id != data.get("owner_id"):
@@ -456,14 +560,20 @@ async def uninstall_shiper(msg: types.Message):
     save_group_data(msg.chat.id, data)
     await msg.reply("ربات برای این گروه غیرفعال شد ❌")
 
+
 # دستور "شیپر خروج" – خروج ربات از گروه
-@dp.message_handler(lambda m: m.chat.type != "private" and "شیپر خروج" in m.text.lower())
+@dp.message_handler(
+    lambda m: m.chat.type != "private" and "شیپر خروج" in m.text.lower()
+)
 async def leave_group(msg: types.Message):
     await msg.reply("بدرود! 👋")
     await bot.leave_chat(msg.chat.id)
 
+
 # دستور "تنظیم اجبار @channelusername"
-@dp.message_handler(lambda m: m.chat.type != "private" and m.text.lower().startswith("تنظیم اجبار"))
+@dp.message_handler(
+    lambda m: m.chat.type != "private" and m.text.lower().startswith("تنظیم اجبار")
+)
 async def set_mandatory_channel(msg: types.Message):
     parts = msg.text.split()
     if len(parts) != 3:
@@ -478,8 +588,11 @@ async def set_mandatory_channel(msg: types.Message):
     save_group_data(msg.chat.id, data)
     await msg.reply(f"عضویت اجباری در {channel} تنظیم شد ✅")
 
+
 # دستور "شیپر فروشنده" – افزودن فروشنده
-@dp.message_handler(lambda m: m.chat.type != "private" and "شیپر فروشنده" in m.text.lower())
+@dp.message_handler(
+    lambda m: m.chat.type != "private" and "شیپر فروشنده" in m.text.lower()
+)
 async def add_seller(msg: types.Message):
     if not msg.reply_to_message:
         await msg.reply("برای افزودن فروشنده باید روی پیامش ریپلای کنید.")
@@ -490,8 +603,11 @@ async def add_seller(msg: types.Message):
     save_group_data(msg.chat.id, data)
     await msg.reply("فروشنده اضافه شد ✅")
 
+
 # دستور "حذف شیپر فروشنده"
-@dp.message_handler(lambda m: m.chat.type != "private" and "حذف شیپر فروشنده" in m.text.lower())
+@dp.message_handler(
+    lambda m: m.chat.type != "private" and "حذف شیپر فروشنده" in m.text.lower()
+)
 async def remove_seller(msg: types.Message):
     if not msg.reply_to_message:
         await msg.reply("برای حذف فروشنده باید روی پیامش ریپلای کنید.")
@@ -503,11 +619,13 @@ async def remove_seller(msg: types.Message):
         save_group_data(msg.chat.id, data)
         await msg.reply("فروشنده حذف شد ❌")
 
+
 # هشدار ۲ روز مانده به پایان تست
 async def notify_expiring_groups():
     now = datetime.now().date()
     for file in os.listdir(DATA_FOLDER):
-        if not file.startswith("group_"): continue
+        if not file.startswith("group_"):
+            continue
         path = os.path.join(DATA_FOLDER, file)
         data = load_group_data(int(file.split("_")[1].split(".")[0]))
         expiration = datetime.strptime(data.get("expiration"), "%Y-%m-%d").date()
@@ -515,11 +633,18 @@ async def notify_expiring_groups():
             owner_id = data.get("owner_id")
             if owner_id:
                 try:
-                    await bot.send_message(int(file.split("_")[1].split(".")[0]), f"⏳ فقط ۲ روز تا پایان اعتبار تست باقی مانده!\nلطفاً با @{ADMIN_USERNAME} تماس بگیرید.")
+                    await bot.send_message(
+                        int(file.split("_")[1].split(".")[0]),
+                        f"⏳ فقط ۲ روز تا پایان اعتبار تست باقی مانده!\nلطفاً با @{ADMIN_USERNAME} تماس بگیرید.",
+                    )
                 except:
                     continue
+
+
 # دستور "لیست کراش‌ها"
-@dp.message_handler(lambda m: m.chat.type != "private" and "لیست کراش" in m.text.lower())
+@dp.message_handler(
+    lambda m: m.chat.type != "private" and "لیست کراش" in m.text.lower()
+)
 async def crush_list(msg: types.Message):
     data = load_group_data(msg.chat.id)
     uid = str(msg.from_user.id)
@@ -530,8 +655,11 @@ async def crush_list(msg: types.Message):
     txt = "💘 کراش‌های شما:\n" + "\n".join(crushes)
     await msg.reply(txt)
 
+
 # دستور "لیست مدیران"
-@dp.message_handler(lambda m: m.chat.type != "private" and "لیست مدیران" in m.text.lower())
+@dp.message_handler(
+    lambda m: m.chat.type != "private" and "لیست مدیران" in m.text.lower()
+)
 async def admin_list(msg: types.Message):
     data = load_group_data(msg.chat.id)
     admins = data.get("settings", {}).get("admins", [])
@@ -547,8 +675,11 @@ async def admin_list(msg: types.Message):
             continue
     await msg.reply("👮‍♂️ مدیران شیپر:\n" + "\n".join(names))
 
+
 # دستور "لیست کاپل‌ها"
-@dp.message_handler(lambda m: m.chat.type != "private" and "لیست کاپل" in m.text.lower())
+@dp.message_handler(
+    lambda m: m.chat.type != "private" and "لیست کاپل" in m.text.lower()
+)
 async def couple_list(msg: types.Message):
     data = load_group_data(msg.chat.id)
     couples = data.get("settings", {}).get("couples", [])
@@ -560,18 +691,30 @@ async def couple_list(msg: types.Message):
         txt += f"{c['user1']} ❤️ {c['user2']} – از {c['since']}\n"
     await msg.reply(txt)
 
+
 # واسطه‌گری درخواست رل با دکمه بله/نه
-@dp.message_handler(lambda m: m.chat.type != "private" and "شیپر بهش بگو" in m.text.lower() and msg.reply_to_message)
+@dp.message_handler(
+    lambda m: m.chat.type != "private"
+    and "شیپر بهش بگو" in m.text.lower()
+    and msg.reply_to_message
+)
 async def propose_request(msg: types.Message):
     partner = msg.reply_to_message.from_user
     kb = InlineKeyboardMarkup()
     kb.add(
-        InlineKeyboardButton("💍 با اجازه بزرگترا بله", callback_data=f"accept_{msg.from_user.id}"),
-        InlineKeyboardButton("❌ متاسفم نه", callback_data=f"reject_{msg.from_user.id}")
+        InlineKeyboardButton(
+            "💍 با اجازه بزرگترا بله", callback_data=f"accept_{msg.from_user.id}"
+        ),
+        InlineKeyboardButton("❌ متاسفم نه", callback_data=f"reject_{msg.from_user.id}"),
     )
-    await msg.reply_to_message.reply(f"{partner.first_name} آیا بنده وکیلم؟", reply_markup=kb)
+    await msg.reply_to_message.reply(
+        f"{partner.first_name} آیا بنده وکیلم؟", reply_markup=kb
+    )
 
-@dp.callback_query_handler(lambda c: c.data.startswith("accept_") or c.data.startswith("reject_"))
+
+@dp.callback_query_handler(
+    lambda c: c.data.startswith("accept_") or c.data.startswith("reject_")
+)
 async def proposal_response(callback: types.CallbackQuery):
     data = load_group_data(callback.message.chat.id)
     from_uid = callback.from_user.id
@@ -580,11 +723,16 @@ async def proposal_response(callback: types.CallbackQuery):
         await callback.message.edit_text("💖 بله گفته شد! تبریک می‌گم به این دو عاشق!")
         # اینجا می‌تونید اطلاعات رل ثبت کنید
     else:
-        await callback.message.edit_text("🫤 درخواست رد شد... ولش کن شانس آوردی قیافه نداشت!")
+        await callback.message.edit_text(
+            "🫤 درخواست رد شد... ولش کن شانس آوردی قیافه نداشت!"
+        )
 
     await callback.answer()
 
+
 # پاک‌سازی پیام‌های موقت پس از پاسخ
-@dp.message_handler(lambda m: m.chat.type != "private" and "پاکسازی پیام" in m.text.lower())
+@dp.message_handler(
+    lambda m: m.chat.type != "private" and "پاکسازی پیام" in m.text.lower()
+)
 async def cleanup_msgs(msg: types.Message):
     await msg.delete()
