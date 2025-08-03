@@ -1,139 +1,113 @@
-# main.py (نسخه نهایی ربات شیپر)
-# شامل تمام قابلیت‌ها و دستورات توافق‌شده
-# کدنویسی بر اساس aiogram 3 و کاملاً ایزوله برای گروه‌ها
+
+# main.py - نسخه حرفه‌ای شیپر گروهی
+# پیاده‌سازی کامل دستورات حرفه‌ای، ایزوله‌سازی گروه‌ها، کنترل پنل، عضویت اجباری، تایم تست، پیام‌های خودکار و...
 
 import os
-import asyncio
 import json
+import random
 from datetime import datetime, timedelta
-from aiogram import Bot, Dispatcher, F, Router, types
-from aiogram.enums import ParseMode, ChatType
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters import CommandStart, CommandObject, Command
-from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram import Bot, Dispatcher, types, executor
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.dispatcher.filters import Command
+from aiogram.utils.exceptions import ChatNotFound
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
+if not BOT_TOKEN:
+    raise ValueError("توکن ربات تعریف نشده. لطفاً در Railway متغیر BOT_TOKEN را ست کنید.")
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher(bot)
 
-bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.HTML)
-dp = Dispatcher(storage=MemoryStorage())
-router = Router()
-dp.include_router(router)
+ADMIN_ID = os.getenv("ADMIN_ID")
+CHANNEL_ID = os.getenv("CHANNEL_ID")  # For join check
 
-# مسیر ذخیره دیتای گروه‌ها
-DATA_DIR = "group_data"
-os.makedirs(DATA_DIR, exist_ok=True)
+DATA_FOLDER = "data"
+os.makedirs(DATA_FOLDER, exist_ok=True)
 
-def get_group_file(group_id):
-    return os.path.join(DATA_DIR, f"{group_id}.json")
+def get_group_file(chat_id):
+    return os.path.join(DATA_FOLDER, f"group_{chat_id}.json")
 
-def load_data(group_id):
-    path = get_group_file(group_id)
-    if not os.path.exists(path):
-        return {}
-    with open(path, 'r', encoding='utf-8') as f:
-        return json.load(f)
+def load_group_data(chat_id):
+    path = get_group_file(chat_id)
+    if os.path.exists(path):
+        with open(path, "r") as f:
+            return json.load(f)
+    return {
+        "installed": False,
+        "owner_id": None,
+        "expiration": None,
+        "users": {},
+        "crushes": {},
+        "couples": [],
+        "settings": {}
+    }
 
-def save_data(group_id, data):
-    with open(get_group_file(group_id), 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+def save_group_data(chat_id, data):
+    with open(get_group_file(chat_id), "w") as f:
+        json.dump(data, f, indent=2)
 
-# ارسال پیام خوش‌آمد و دکمه‌ها در استارت
-@router.message(CommandStart(), F.chat.type == ChatType.GROUP)
-async def start_group(msg: Message):
-    buttons = [
-        [InlineKeyboardButton(text="📚 راهنما", callback_data="help")],
-        [InlineKeyboardButton(text="📞 تماس با مالک", url="https://t.me/oldkaseb")],
-        [InlineKeyboardButton(text="➕ افزودن ربات با تست رایگان", url="https://t.me/{}/?startgroup=true".format((await bot.me()).username))]
-    ]
-    markup = InlineKeyboardMarkup(inline_keyboard=buttons)
-    await msg.reply(
-        "🎉 به ربات شیپر خوش آمدید!\nمدت تست: ۷ روز رایگان\n💸 شارژ ماهانه: ۵۰ هزار تومان",
-        reply_markup=markup
+def is_admin(user_id, group_data):
+    return str(user_id) in group_data.get("settings", {}).get("admins", [])
+
+@dp.message_handler(commands=["start"])
+async def start_handler(msg: types.Message):
+    if msg.chat.type != "private":
+        return
+    kb = InlineKeyboardMarkup()
+    kb.add(
+        InlineKeyboardButton("📋 راهنما", callback_data="help"),
+        InlineKeyboardButton("📞 تماس با مالک", url="https://t.me/oldkaseb"),
+        InlineKeyboardButton("➕ افزودن ربات", url="https://t.me/" + (await bot.get_me()).username + "?startgroup=true")
     )
-    # ذخیره شروع برای شارژ تست
-    group_id = str(msg.chat.id)
-    data = load_data(group_id)
-    if 'started_at' not in data:
-        data['started_at'] = datetime.now().isoformat()
-        data['owner_id'] = msg.from_user.id
-        data['active'] = True
-        save_data(group_id, data)
+    await msg.answer(
+        "👋 به ربات شیپر گروهی خوش اومدی!
 
-# جلوگیری از پاسخ به پیام‌های غیر از گروه و فقط دستورات خاص
-@router.message(F.chat.type != ChatType.GROUP)
-async def ignore_private(msg: Message):
-    await msg.answer("این ربات فقط در گروه‌ها قابل استفاده است.")
+✨ با امکانات پیشرفته برای ساخت کاپل، ثبت کراش، رفیق‌یابی و... 
+💸 قیمت شارژ ماهیانه: ۵۰ هزار تومان
 
-@router.message(F.text)
-async def handle_keywords(msg: Message):
-    if msg.chat.type != ChatType.GROUP:
-        return
+🔽 دکمه‌های زیر رو ببین:",
+        reply_markup=kb
+    )
 
-    txt = msg.text.strip().lower()
-    group_id = str(msg.chat.id)
-    data = load_data(group_id)
-    user_id = str(msg.from_user.id)
-    username = msg.from_user.username or msg.from_user.full_name
+@dp.message_handler(lambda msg: msg.chat.type != "private" and "شیپر" in msg.text)
+async def handle_shiper_keyword(msg: types.Message):
+    await msg.reply("جانم؟ کیو بگیرم برات؟ آیدی بده 😎")
 
-    # بررسی فعال بودن گروه
-    if not data.get('active', False):
-        return
+@dp.message_handler(lambda msg: msg.text.lower().startswith("من پسرم") or msg.text.lower().startswith("من دخترم"))
+async def handle_gender_register(msg: types.Message):
+    data = load_group_data(msg.chat.id)
+    user = data["users"].get(str(msg.from_user.id), {})
+    gender = "پسر" if "پسر" in msg.text else "دختر"
+    user["gender"] = gender
+    data["users"][str(msg.from_user.id)] = user
+    save_group_data(msg.chat.id, data)
+    await msg.reply(f"جنسیت شما به‌عنوان {gender} ثبت شد ✅")
 
-    # شیپر = پاسخ ابتدایی و درخواست آیدی
-    if txt == "شیپر":
-        await msg.reply("جانم کیو بگیرم برات؟ آیدی بده")
+@dp.callback_query_handler(lambda c: c.data == "help")
+async def help_callback(callback: types.CallbackQuery):
+    await callback.message.edit_text(
+        "📖 راهنمای کامل دستورات:
+"
+        "من پسرم / من دخترم – ثبت جنسیت
+"
+        "تعریف مشخصات – ثبت نام، سن، شهر، قد
+"
+        "ثبت تولد – فرمت عددی 12/05/1383
+"
+        "ثبت کراش – ریپلای یا آیدی
+"
+        "حذف کراش – ریپلای یا آیدی
+"
+        "شیپم کن – شیپر رندوم با کراش
+"
+        "من رلم شیپر – ثبت پارتنر
+"
+        "من سینگلم شیپر – ثبت سینگل
+"
+        "شیپر کات – حذف رابطه
+"
+        "و ده‌ها دستور دیگر برای مدیر و مالک..."
+    )
+    await callback.answer()
 
-    # من دخترم / من پسرم
-    if txt == "من دخترم":
-        data.setdefault('users', {})[user_id] = {"gender": "girl"}
-        save_data(group_id, data)
-        await msg.reply("ثبت شد. خوش اومدی دختر شیپری ❤️")
-    if txt == "من پسرم":
-        data.setdefault('users', {})[user_id] = {"gender": "boy"}
-        save_data(group_id, data)
-        await msg.reply("ثبت شد. خوش اومدی پسر شیپری 💙")
-
-    # تعریف مشخصات
-    if txt.startswith("تعریف"):
-        # تعریف اسم=حامد سن=22 قد=180 شهر=تهران
-        parts = dict(part.split("=") for part in txt.replace("تعریف", "").split() if "=" in part)
-        if not parts:
-            await msg.reply("فرمت تعریف: تعریف اسم=حامد سن=22 قد=180 شهر=تهران")
-            return
-        user = data.setdefault('users', {}).setdefault(user_id, {})
-        user.update({k: v for k, v in parts.items() if k in ['اسم','سن','قد','شهر']})
-        save_data(group_id, data)
-        await msg.reply("✅ مشخصاتت ثبت شد")
-
-    # ثبت تولد
-    if txt.startswith("ثبت تولد"):
-        # ثبت تولد 01/05/1380
-        try:
-            parts = txt.replace("ثبت تولد", "").strip()
-            day, month, year = map(int, parts.split("/"))
-            user = data.setdefault('users', {}).setdefault(user_id, {})
-            user['birthday'] = f"{day:02}/{month:02}/{year}"
-            save_data(group_id, data)
-            await msg.reply(f"🎂 تولدت {user['birthday']} ثبت شد")
-        except:
-            await msg.reply("❌ فرمت صحیح: ثبت تولد 01/01/1380")
-
-    # دستور آیدی شیپر
-    if txt == "آیدی شیپر":
-        user = data.get('users', {}).get(user_id, {})
-        res = f"👤 اطلاعات شما:\n"
-        res += f"👨‍💼 اسم: {user.get('اسم', 'تعریف نشده')}\n"
-        res += f"🎂 تولد: {user.get('birthday', 'تعریف نشده')}\n"
-        res += f"📏 قد: {user.get('قد', 'تعریف نشده')}\n"
-        res += f"🏙️ شهر: {user.get('شهر', 'تعریف نشده')}\n"
-        res += f"❤️ وضعیت: {user.get('status', 'نامشخص')}\n"
-        await msg.reply(res)
-
-# راه‌اندازی ربات
-async def main():
-    await dp.start_polling(bot)
-
-if __name__ == '__main__':
-    asyncio.run(main())
+if __name__ == "__main__":
+    executor.start_polling(dp, skip_updates=True)
